@@ -14,7 +14,7 @@ GNU Affero General Public License for more details.
 You should have received a copy of the GNU Affero General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.-->
 
-<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd" >
+<!DOCTYPE mapper SYSTEM "classpath:neatlogic/framework/dao/node/neatlogic_mybatis.dtd">
 <mapper namespace="neatlogic.module.deploy.dao.mapper.DeployAppConfigMapper">
 
     <cache type="neatlogic.framework.dao.cache.NeatLogicCache" flushInterval="30000" size="100"></cache>
@@ -171,7 +171,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.-->
                 )
                 )
             </if>
-            and LP{saa.id=maxLimitId}
+            <licensePolicy type="maxLimitId" column="saa.id" />
         </where>
         order by if(dacu.user_uuid = #{userUuid},1,0) desc,
         CONVERT(saa.abbr_name USING gbk) COLLATE gbk_chinese_ci ASC,
@@ -213,7 +213,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.-->
                 )
                 )
             </if>
-            and LP{sa.id=maxLimitId}
+            <licensePolicy type="maxLimitId" column="sa.id" />
         </where>
         order by if(dacu.user_uuid = #{userUuid},1,0) desc,
         CONVERT(sa.abbr_name USING gbk) COLLATE gbk_chinese_ci ASC
@@ -944,7 +944,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.-->
                 <otherwise>
                 </otherwise>
             </choose>
-            and LP{a.id=maxLimitId}
+            <licensePolicy type="maxLimitId" column="a.id" />
         </where>
     </select>
 
