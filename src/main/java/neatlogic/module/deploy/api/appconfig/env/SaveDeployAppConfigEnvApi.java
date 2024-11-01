@@ -109,9 +109,7 @@ public class SaveDeployAppConfigEnvApi extends PrivateApiComponentBase {
         List<GlobalAttrVo> globalAttrList = globalAttrCrossoverMapper.searchGlobalAttr(globalAttrVo);
         if (CollectionUtils.isNotEmpty(globalAttrList)) {
             globalAttrVo = globalAttrList.get(0);
-            GlobalAttrItemVo globalAttrItemVo = new GlobalAttrItemVo();
-            globalAttrItemVo.setAttrId(globalAttrVo.getId());
-            globalAttrItemList = globalAttrCrossoverMapper.searchGlobalAttrItem(globalAttrItemVo);
+            globalAttrItemList = globalAttrCrossoverMapper.getAllGlobalAttrItemByAttrId(globalAttrVo.getId());
         }
         List<Long> globalAttrItemIdList = globalAttrItemList.stream().map(GlobalAttrItemVo::getId).collect(Collectors.toList());
         List<Long> notExistIdList = ListUtils.removeAll(envIdList, globalAttrItemIdList);
