@@ -68,6 +68,7 @@ public class ListDeployAppConfigAppEnvApi extends PrivateApiComponentBase {
     }
 
     @Input({
+            @Param(name = "keyword", type = ApiParamType.STRING, desc = "common.keyword"),
             @Param(name = "appSystemId", type = ApiParamType.LONG, isRequired = true, desc = "term.cmdb.appsystemid"),
             @Param(name = "appModuleId", type = ApiParamType.LONG, desc = "term.cmdb.appmoduleid"),
             @Param(name = "isHasEnv", type = ApiParamType.INTEGER, desc = "term.cmdb.isexistingenv", help = "0:查找现没有的环境，1：查找现有的环境"),
@@ -80,6 +81,7 @@ public class ListDeployAppConfigAppEnvApi extends PrivateApiComponentBase {
     public Object myDoService(JSONObject paramObj) {
         Long appSystemId = paramObj.getLong("appSystemId");
         Long appModuleId = paramObj.getLong("appModuleId");
+        String keyword = paramObj.getString("keyword");
         List<DeployAppEnvironmentVo> returnEnvList = new ArrayList<>();
 
         //查找发布的环境
@@ -100,6 +102,7 @@ public class ListDeployAppConfigAppEnvApi extends PrivateApiComponentBase {
                 globalAttrVo = globalAttrList.get(0);
                 GlobalAttrItemVo globalAttrItemVo = new GlobalAttrItemVo();
                 globalAttrItemVo.setAttrId(globalAttrVo.getId());
+                globalAttrItemVo.setKeyword(keyword);
                 globalAttrItemList = globalAttrCrossoverMapper.searchGlobalAttrItem(globalAttrItemVo);
             }
             for (GlobalAttrItemVo globalAttrItemVo : globalAttrItemList) {
