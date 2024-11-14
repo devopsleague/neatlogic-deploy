@@ -2,8 +2,14 @@ package neatlogic.module.deploy.api.version;
 
 import neatlogic.framework.asynchronization.threadlocal.UserContext;
 import neatlogic.framework.auth.core.AuthAction;
+import neatlogic.framework.cmdb.crossover.IResourceCrossoverMapper;
+import neatlogic.framework.cmdb.dto.resourcecenter.ResourceVo;
+import neatlogic.framework.cmdb.exception.resourcecenter.AppEnvNotFoundException;
+import neatlogic.framework.cmdb.exception.resourcecenter.AppModuleNotFoundException;
+import neatlogic.framework.cmdb.exception.resourcecenter.AppSystemNotFoundException;
 import neatlogic.framework.common.constvalue.ApiParamType;
 import neatlogic.framework.common.constvalue.ResponseCode;
+import neatlogic.framework.crossover.CrossoverServiceFactory;
 import neatlogic.framework.dao.mapper.UserMapper;
 import neatlogic.framework.deploy.auth.DEPLOY_MODIFY;
 import neatlogic.framework.deploy.dto.version.DeployVersionEnvVo;
@@ -62,9 +68,9 @@ public class GetDeployVersionEnvForAutoexecApi extends PrivateApiComponentBase {
     }
 
     @Input({
-            @Param(name = "sysId", desc = "term.cmdb.appsystemid", isRequired = true, type = ApiParamType.LONG),
-            @Param(name = "moduleId", desc = "erm.cmdb.moduleid", isRequired = true, type = ApiParamType.LONG),
-            @Param(name = "envId", desc = "term.cmdb.envid", isRequired = true, type = ApiParamType.LONG),
+            @Param(name = "sysName", type = ApiParamType.STRING, isRequired = true, desc = "term.cmdb.sysname"),
+            @Param(name = "moduleName", type = ApiParamType.STRING, isRequired = true, desc = "term.cmdb.modulename"),
+            @Param(name = "envName", type = ApiParamType.STRING, isRequired = true, desc = "term.cmdb.envname"),
             @Param(name = "version", desc = "common.versionnum", isRequired = true, type = ApiParamType.STRING),
             @Param(name = "proxyToUrl", desc = "term.deploy.proxytourl", help = "可选，如果有则表示去其他环境获取", rule = RegexUtils.CONNECT_URL, type = ApiParamType.REGEX),
     })
@@ -74,22 +80,41 @@ public class GetDeployVersionEnvForAutoexecApi extends PrivateApiComponentBase {
         JSONObject result = new JSONObject();
         String proxyToUrl = paramObj.getString("proxyToUrl");
         if (StringUtils.isBlank(proxyToUrl)) {
-            Long sysId = paramObj.getLong("sysId");
-            Long moduleId = paramObj.getLong("moduleId");
-            Long envId = paramObj.getLong("envId");
+            String sysName = paramObj.getString("sysName");
+            String moduleName = paramObj.getString("moduleName");
             String version = paramObj.getString("version");
+            String envName = paramObj.getString("envName");
+            IResourceCrossoverMapper resourceCrossoverMapper = CrossoverServiceFactory.getApi(IResourceCrossoverMapper.class);
+            ResourceVo appSystem = resourceCrossoverMapper.getAppSystemByName(sysName);
+            if (appSystem == null) {
+                throw new AppSystemNotFoundException(sysName);
+            }
+            ResourceVo appModule = resourceCrossoverMapper.getAppModuleByName(moduleName);
+            if (appModule == null) {
+                throw new AppModuleNotFoundException(moduleName);
+            }
+            Long sysId = appSystem.getId();
+            Long moduleId = appModule.getId();
+            paramObj.put("sysId", sysId);
+            paramObj.put("moduleId", moduleId);
             DeployVersionVo versionVo = deployVersionMapper.getDeployVersionBaseInfoBySystemIdAndModuleIdAndVersion(new DeployVersionVo(version, sysId, moduleId));
             if (versionVo == null) {
                 throw new DeployVersionNotFoundException(version);
             }
-            DeployVersionEnvVo envVo = deployVersionMapper.getDeployVersionEnvByVersionIdAndEnvId(versionVo.getId(), envId);
-            if (envVo == null) {
-                throw new DeployVersionEnvNotFoundException(versionVo.getVersion(), envId);
+            //env status
+            ResourceVo env = resourceCrossoverMapper.getAppEnvByName(envName);
+            if (env == null) {
+                throw new AppEnvNotFoundException(envName);
             }
+            DeployVersionEnvVo versionEnvVo = deployVersionMapper.getDeployVersionEnvByVersionIdAndEnvId(versionVo.getId(), env.getId());
+            if (versionEnvVo == null) {
+                throw new DeployVersionEnvNotFoundException(sysName, moduleName, envName, version);
+            }
+
             result.put("version", versionVo.getVersion());
-            result.put("buildNo", envVo.getBuildNo());
-            result.put("isMirror", envVo.getIsMirror());
-            result.put("status", envVo.getStatus());
+            result.put("buildNo", versionEnvVo.getBuildNo());
+            result.put("isMirror", versionEnvVo.getIsMirror());
+            result.put("status", versionEnvVo.getStatus());
         } else {
             String credentialUserUuid = deployVersionMapper.getDeployVersionAppbuildCredentialByProxyToUrl(proxyToUrl);
             UserVo credentialUser = userMapper.getUserByUuid(credentialUserUuid);
@@ -100,6 +125,8 @@ public class GetDeployVersionEnvForAutoexecApi extends PrivateApiComponentBase {
             String url = proxyToUrl + UserContext.get().getRequest().getRequestURI();
             UserContext.init(credentialUser, authenticationInfo, "+8:00");
             UserContext.get().setToken("GZIP_" + LoginAuthHandlerBase.buildJwt(credentialUser).getCc());
+            //到别的环境去验证
+            paramObj.remove("proxyToUrl");
             HttpRequestUtil httpRequestUtil = HttpRequestUtil.post(url)
                     .setPayload(paramObj.toJSONString()).setAuthType(AuthenticateType.BUILDIN)
                     .sendRequest();
