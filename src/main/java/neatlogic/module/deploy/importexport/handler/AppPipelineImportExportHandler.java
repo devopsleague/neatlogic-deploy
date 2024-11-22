@@ -45,9 +45,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.zip.ZipOutputStream;
 
 @Component
@@ -121,20 +119,82 @@ public class AppPipelineImportExportHandler extends ImportExportHandlerBase {
         if (appSystem == null) {
             throw new AppSystemNotFoundException(importExportVo.getName());
         }
+        Map<String, ResourceVo> resourceMap = new HashMap<>();
+        resourceMap.put(appSystem.getAbbrName(), appSystem);
         JSONObject data = importExportVo.getData();
         DeployAppPipelineExportVo deployAppPipelineExportVo = data.toJavaObject(DeployAppPipelineExportVo.class);
         List<DeployAppConfigVo> appConfigList = deployAppPipelineExportVo.getAppConfigList();
         Iterator<DeployAppConfigVo> iterator = appConfigList.iterator();
         while (iterator.hasNext()) {
             DeployAppConfigVo appConfigVo = iterator.next();
+            Long appModuleId = appConfigVo.getAppModuleId();
+            Long envId = appConfigVo.getEnvId();
             String appSystemAbbrName = appConfigVo.getAppSystemAbbrName();
-            appSystem = resourceCrossoverMapper.getAppSystemByName(appSystemAbbrName);
-            if (appSystem != null) {
-                appConfigVo.setAppSystemId(appSystem.getId());
+            if (StringUtils.isBlank(appSystemAbbrName)) {
+                if (logger.isWarnEnabled()) {
+                    logger.warn("The system name is empty");
+                }
+                iterator.remove();
+                continue;
             }
-            boolean flag = dependencyHandle(IMPORT, appConfigVo, null, null, primaryChangeList);
-            if (flag) {
+            appSystem = resourceMap.get(appSystemAbbrName);
+            if (appSystem == null) {
+                appSystem = resourceCrossoverMapper.getAppSystemByName(appSystemAbbrName);
+                if (appSystem == null) {
+                    iterator.remove();
+                    continue;
+                }
+                resourceMap.put(appSystem.getAbbrName(), appSystem);
+            }
+            appConfigVo.setAppSystemId(appSystem.getId());
+            appConfigVo.setAppSystemName(appSystem.getName());
+            if (appModuleId != 0) {
+                String appModuleAbbrName = appConfigVo.getAppModuleAbbrName();
+                if (StringUtils.isBlank(appModuleAbbrName)) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("The module name is empty");
+                    }
+                    iterator.remove();
+                    continue;
+                }
+                ResourceVo appModule = resourceMap.get(appModuleAbbrName);
+                if (appModule == null) {
+                    appModule = resourceCrossoverMapper.getAppModuleByName(appModuleAbbrName);
+                    if (appModule == null) {
+                        iterator.remove();
+                        continue;
+                    }
+                    resourceMap.put(appModule.getAbbrName(), appModule);
+                }
+                appConfigVo.setAppModuleId(appModule.getId());
+                appConfigVo.setAppModuleName(appModule.getName());
+            }
+            if (envId != 0) {
+                String envName = appConfigVo.getEnvName();
+                if (StringUtils.isBlank(envName)) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("The environment name is empty");
+                    }
+                    iterator.remove();
+                    continue;
+                }
+                ResourceVo env = resourceMap.get(envName);
+                if (env == null) {
+                    env = resourceCrossoverMapper.getAppEnvByName(envName);
+                    if (env == null) {
+                        iterator.remove();
+                        continue;
+                    }
+                    resourceMap.put(env.getName(), env);
+                }
+                appConfigVo.setEnvId(env.getId());
+            }
+            dependencyHandle(IMPORT, appConfigVo, null, null, primaryChangeList);
+            if (appModuleId == 0 && envId == 0) {
                 pipelineService.saveDeployAppPipeline(appConfigVo);
+            } else {
+                deployAppConfigMapper.deleteAppEnvAppConfig(appConfigVo.getAppSystemId(), appConfigVo.getAppModuleId(), appConfigVo.getEnvId());
+                deployAppConfigMapper.insertAppConfig(appConfigVo);
             }
         }
         return null;
@@ -152,15 +212,40 @@ public class AppPipelineImportExportHandler extends ImportExportHandlerBase {
         if (CollectionUtils.isEmpty(appConfigList)) {
             throw new DeployAppConfigNotFoundException(appSystemId);
         }
+        Map<Long, ResourceVo> resourceMap = new HashMap<>();
         Iterator<DeployAppConfigVo> iterator = appConfigList.iterator();
         while (iterator.hasNext()) {
             DeployAppConfigVo appConfigVo = iterator.next();
             appConfigVo.setAppSystemName(appSystem.getName());
             appConfigVo.setAppSystemAbbrName(appSystem.getAbbrName());
-            boolean flag = dependencyHandle(EXPORT, appConfigVo, dependencyList, zipOutputStream, null);
-            if (!flag) {
-                iterator.remove();
+            Long appModuleId = appConfigVo.getAppModuleId();
+            if (appModuleId != null && appModuleId != 0) {
+                ResourceVo appModule = resourceMap.get(appModuleId);
+                if (appModule == null) {
+                    appModule = resourceCrossoverMapper.getAppModuleById(appModuleId);
+                    if (appModule == null) {
+                        iterator.remove();
+                        continue;
+                    }
+                    resourceMap.put(appModuleId, appModule);
+                }
+                appConfigVo.setAppModuleName(appModule.getName());
+                appConfigVo.setAppModuleAbbrName(appModule.getAbbrName());
             }
+            Long envId = appConfigVo.getEnvId();
+            if (envId != null && envId != 0) {
+                ResourceVo appEnv = resourceMap.get(envId);
+                if (appEnv == null) {
+                    appEnv = resourceCrossoverMapper.getAppEnvById(envId);
+                    if (appEnv == null) {
+                        iterator.remove();
+                        continue;
+                    }
+                    resourceMap.put(envId, appEnv);
+                }
+                appConfigVo.setEnvName(appEnv.getName());
+            }
+            dependencyHandle(EXPORT, appConfigVo, dependencyList, zipOutputStream, null);
         }
         DeployAppPipelineExportVo deployAppPipelineExportVo = new DeployAppPipelineExportVo();
         deployAppPipelineExportVo.setAppSystemId(appSystem.getId());
@@ -181,19 +266,16 @@ public class AppPipelineImportExportHandler extends ImportExportHandlerBase {
      * @param zipOutputStream
      * @param primaryChangeList
      */
-    private boolean dependencyHandle(
+    private void dependencyHandle(
             String action,
             DeployAppConfigVo appConfigVo,
             List<ImportExportBaseInfoVo> dependencyList,
             ZipOutputStream zipOutputStream,
             List<ImportExportPrimaryChangeVo> primaryChangeList
     ) {
-        IResourceCrossoverMapper resourceCrossoverMapper = CrossoverServiceFactory.getApi(IResourceCrossoverMapper.class);
         DeployPipelineConfigVo config = appConfigVo.getConfig();
         Long appModuleId = appConfigVo.getAppModuleId();
-        String appModuleAbbrName = appConfigVo.getAppModuleAbbrName();
         Long envId = appConfigVo.getEnvId();
-        String envName = appConfigVo.getEnvName();
         if (appModuleId == 0 && envId == 0) {
             // 应用层
             // 阶段
@@ -249,17 +331,6 @@ public class AppPipelineImportExportHandler extends ImportExportHandlerBase {
             }
         } else if (envId == 0) {
             // 模块层
-            if (StringUtils.isBlank(appModuleAbbrName)) {
-                if (logger.isWarnEnabled()) {
-                    logger.warn("The module is simply empty");
-                }
-            }
-            ResourceVo appModule = resourceCrossoverMapper.getAppModuleByName(appModuleAbbrName);
-            if (appModule == null) {
-                return false;
-            }
-            appConfigVo.setAppModuleId(appModule.getId());
-            appConfigVo.setAppModuleName(appModule.getName());
             // 阶段
             List<DeployPipelinePhaseVo> combopPhaseList = config.getCombopPhaseList();
             if (CollectionUtils.isNotEmpty(combopPhaseList)) {
@@ -301,28 +372,6 @@ public class AppPipelineImportExportHandler extends ImportExportHandlerBase {
             }
         } else {
             // 环境层
-            if (StringUtils.isBlank(appModuleAbbrName)) {
-                if (logger.isWarnEnabled()) {
-                    logger.warn("The module is simply empty");
-                }
-            }
-            ResourceVo appModule = resourceCrossoverMapper.getAppModuleByName(appModuleAbbrName);
-            if (appModule == null) {
-                return false;
-            }
-            appConfigVo.setAppModuleId(appModule.getId());
-            appConfigVo.setAppModuleName(appModule.getName());
-
-            if (StringUtils.isBlank(envName)) {
-                if (logger.isWarnEnabled()) {
-                    logger.warn("The environment name is empty");
-                }
-            }
-            ResourceVo env = resourceCrossoverMapper.getAppEnvByName(envName);
-            if (env == null) {
-                return false;
-            }
-            appConfigVo.setEnvId(env.getId());
             // 阶段
             List<DeployPipelinePhaseVo> combopPhaseList = config.getCombopPhaseList();
             if (CollectionUtils.isNotEmpty(combopPhaseList)) {
@@ -364,7 +413,6 @@ public class AppPipelineImportExportHandler extends ImportExportHandlerBase {
                 }
             }
         }
-        return true;
     }
 
     /**
